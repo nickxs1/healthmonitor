@@ -129,11 +129,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ---------- Selected variant ----------
 FROM final-${VARIANT} AS final
 
-ARG PORT=3000
+ARG PORT=80
 ARG KENER_BASE_PATH=
 
 ENV NODE_ENV=production \
-#    PORT=${PORT} \
+    PORT=${PORT} \
     KENER_BASE_PATH=${KENER_BASE_PATH} \
     BODY_SIZE_LIMIT=3M \
     TZ=UTC \
