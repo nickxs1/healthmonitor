@@ -18,12 +18,27 @@ function shouldReconnectAfterRedisError(message: string): boolean {
   return false;
 }
 
+function getRedisTlsOptions(): RedisOptions["tls"] | undefined {
+  const url = process.env.REDIS_URL;
+  if (!url) return undefined;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "rediss:") {
+      return { servername: parsed.hostname };
+    }
+  } catch {
+    // invalid URL — skip TLS
+  }
+  return undefined;
+}
+
 const redisClientOptions: RedisOptions = {
   maxRetriesPerRequest: null,
   // Detect dead peers during long K8s / network stalls (default ioredis keepAlive is off).
   keepAlive: 30000,
   // Allow long RDB reloads after a StatefulSet restart before giving up on "ready".
   maxLoadingRetryTime: 120_000,
+  tls: getRedisTlsOptions(),
   reconnectOnError: (error: Error) => {
     const message = error?.message ?? "";
     if (shouldReconnectAfterRedisError(message)) {
