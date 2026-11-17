@@ -7,10 +7,9 @@ import type {
   CreateCommentResponse,
   BadRequestResponse,
 } from "$lib/types/api";
-import GC from "$lib/global-constants";
+import { AddIncidentComment } from "$lib/server/controllers/incidentController";
 import { GetMinuteStartTimestampUTC, GetMinuteStartNowTimestampUTC, parseDbTimestamp } from "$lib/server/tool";
-
-const VALID_STATES: string[] = [GC.INVESTIGATING, GC.IDENTIFIED, GC.MONITORING, GC.RESOLVED];
+import { readRequestBody } from "$lib/server/requestBody";
 
 function formatCommentResponse(comment: {
   id: number;
@@ -51,22 +50,11 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   // Incident is validated by middleware and available in locals
   const incident = locals.incident!;
 
-  let body: CreateCommentRequest;
-
-  try {
-    body = await request.json();
-  } catch {
-    const errorResponse: BadRequestResponse = {
-      error: {
-        code: "BAD_REQUEST",
-        message: "Invalid JSON body",
-      },
-    };
-    return json(errorResponse, { status: 400 });
-  }
+  const body = await readRequestBody<CreateCommentRequest>(request, "POST /api/v4/incidents/{incident_id}/comments");
+  if (body instanceof Response) return body;
 
   // Validate required fields
-  if (!body.comment || typeof body.comment !== "string" || body.comment.trim().length === 0) {
+  if (body.comment.trim().length === 0) {
     const errorResponse: BadRequestResponse = {
       error: {
         code: "BAD_REQUEST",
@@ -79,58 +67,24 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   // Timestamp is optional - use current time if not provided
   // Always normalize to minute start
   let timestamp: number;
-  if (body.timestamp !== undefined && body.timestamp !== null) {
-    if (typeof body.timestamp !== "number" || isNaN(body.timestamp)) {
-      const errorResponse: BadRequestResponse = {
-        error: {
-          code: "BAD_REQUEST",
-          message: "timestamp must be a valid timestamp (UTC seconds)",
-        },
-      };
-      return json(errorResponse, { status: 400 });
-    }
+  if (body.timestamp !== undefined) {
     timestamp = GetMinuteStartTimestampUTC(body.timestamp);
   } else {
     timestamp = GetMinuteStartNowTimestampUTC();
   }
 
-  if (!body.state || typeof body.state !== "string") {
+  let createdComment: Awaited<ReturnType<typeof AddIncidentComment>>;
+  try {
+    createdComment = await AddIncidentComment(incident.id, body.comment.trim(), body.state, timestamp);
+  } catch (err) {
     const errorResponse: BadRequestResponse = {
       error: {
         code: "BAD_REQUEST",
-        message: "state is required",
+        message: err instanceof Error ? err.message : "Failed to add comment",
       },
     };
     return json(errorResponse, { status: 400 });
   }
-
-  if (!VALID_STATES.includes(body.state)) {
-    const errorResponse: BadRequestResponse = {
-      error: {
-        code: "BAD_REQUEST",
-        message: `state must be one of: ${VALID_STATES.join(", ")}`,
-      },
-    };
-    return json(errorResponse, { status: 400 });
-  }
-
-  // Create comment
-  const createdComment = await db.insertIncidentComment(incident.id, body.comment.trim(), body.state, timestamp);
-
-  // Update incident state to match the comment state
-  await db.updateIncident({
-    id: incident.id,
-    title: incident.title,
-    start_date_time: incident.start_date_time,
-    end_date_time: body.state === GC.RESOLVED ? timestamp : incident.end_date_time,
-    status: incident.status,
-    state: body.state,
-    created_at: incident.created_at,
-    updated_at: incident.updated_at,
-    incident_type: incident.incident_type,
-    incident_source: "",
-    is_global: incident.is_global,
-  });
 
   const response: CreateCommentResponse = {
     comment: formatCommentResponse(createdComment),

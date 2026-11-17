@@ -9,14 +9,13 @@ Environment variables allow you to configure Kener without modifying code. They'
 
 ### KENER_SECRET_KEY {#kener-secret-key}
 
-**Purpose**: Secret key for signing JWT tokens and encrypting sensitive data.
+**Purpose**: Secret key for signing JWT tokens and hashing API keys.
 
 **Used For**:
 
-- User session tokens and authentication
-- API key generation and validation
-- Password hashing and verification
-- Cookie signing for secure sessions
+- User session tokens
+- Password reset, invitation, and email verification links
+- API key validation
 
 **Requirements**:
 
@@ -42,7 +41,10 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
 > [!WARNING]
-> Without `KENER_SECRET_KEY`, Kener will use a default key which is **not secure for production**. You'll see warnings in the console if running without this variable.
+> Kener has no fallback key. When `KENER_SECRET_KEY` is unset or empty, the sign-in page shows **Set up not completed**, and sign-in, password reset, and API keys stay off. Kener also logs a startup warning when the key is unset or is an example value from these docs, such as `replace_me_with_a_random_string`.
+
+> [!IMPORTANT]
+> Changing `KENER_SECRET_KEY` signs everyone out and stops every existing API key. Create new API keys after the change.
 
 ### ORIGIN {#origin}
 
@@ -236,6 +238,23 @@ NO_PROXY=localhost,127.0.0.1,prometheus.lan,.internal
 - `NO_PROXY` accepts exact hosts, `host:port`, `.suffix`, `*.host`, and IPv4 ranges (`10.0.0.1-10.0.0.255`). CIDR is not supported. Put LAN Prometheus servers and Docker daemons here. Triggers, Resend and OIDC go through `fetch`, whose `NO_PROXY` matcher can differ from the monitors' on unusual entries; stick to hostnames and `.suffix` forms.
 - An API or Prometheus monitor can set its own **Proxy URL** (for example `http://user:$PROXY_PASS@proxy.internal:3128`, with `$SECRET` substitution), which overrides these variables for that monitor.
 - A monitor error of `Failed to establish tunnel to host:443 via …` means the proxy refused the connection: check the proxy credentials, or add the host to `NO_PROXY`.
+
+### DOCKER_HOST / DOCKER_TLS_VERIFY {#docker-host}
+
+**Purpose**: The connection a new [Docker monitor](/docs/v4/monitors/docker#default-connection) starts with, in the Docker CLI's own format. Set it when Kener reaches Docker through a socket proxy.
+
+**Default**: unset (the form starts on `/var/run/docker.sock`)
+
+**Example**:
+
+```bash
+DOCKER_HOST=tcp://docker-socket-proxy:2375
+```
+
+**Important**:
+
+- Kener reads `unix://` and `tcp://` addresses. Set `DOCKER_TLS_VERIFY=1` or `DOCKER_TLS=1` to start on `tls`. Any other value logs one warning and keeps the socket.
+- Only the dashboard form uses it. Saved monitors and monitors created through the API keep the connection they were given.
 
 ## Integration Variables {#integration-variables}
 
@@ -618,7 +637,7 @@ After setting environment variables:
 
 4. **Warning Signs**:
     ```
-    ⚠ KENER_SECRET_KEY not set, using default (INSECURE)
+    KENER_SECRET_KEY is not set. Sign-in, password reset, and API keys stay off until you set it, ...
     ⚠ Variable $API_KEY not found in environment
     ```
 
@@ -637,15 +656,15 @@ After setting environment variables:
 
 ### Secret Key Warnings {#secret-key-warnings}
 
-**Warning**: `KENER_SECRET_KEY not set, using default`
+**Warning**: `KENER_SECRET_KEY is not set. Sign-in, password reset, and API keys stay off until you set it, ...`
 
-**Impact**:
+**Impact**: The sign-in page shows **Set up not completed**, and `/api/v4` requests that send a Bearer key return HTTP 500.
 
-- Sessions can be hijacked
-- Authentication is insecure
-- Not suitable for production
+**Warning**: `KENER_SECRET_KEY is a published example value, so anyone can forge sign-in sessions for this instance. ...`
 
-**Solution**: Set `KENER_SECRET_KEY` immediately.
+**Impact**: The example values in these docs are public, so anyone can forge a sign-in session for your instance.
+
+**Solution**: Set `KENER_SECRET_KEY` to the output of `openssl rand -base64 32`, then restart Kener. Changing the key signs everyone out and stops every existing API key.
 
 ### Database Connection Fails {#database-connection-fails}
 

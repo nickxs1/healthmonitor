@@ -305,6 +305,7 @@ export interface MaintenanceResponse {
   description: string | null;
   start_date_time: number;
   rrule: string;
+  timezone: string | null;
   duration_seconds: number;
   status: "ACTIVE" | "INACTIVE";
   monitors: MaintenanceMonitor[];
@@ -332,6 +333,7 @@ export interface CreateMaintenanceRequest {
   description?: string | null;
   start_date_time: number;
   rrule: string;
+  timezone?: string | null;
   duration_seconds: number;
   monitors?: MaintenanceMonitor[];
 }
@@ -345,6 +347,7 @@ export interface UpdateMaintenanceRequest {
   description?: string | null;
   start_date_time?: number;
   rrule?: string;
+  timezone?: string | null;
   duration_seconds?: number;
   status?: "ACTIVE" | "INACTIVE";
   monitors?: MaintenanceMonitor[];
@@ -562,4 +565,27 @@ export interface UpdatePageResponse {
 
 export interface DeletePageResponse {
   message: string;
+}
+
+// Image API types
+export interface UploadImageRequest {
+  base64: string;
+  mime_type: string;
+  file_name?: string;
+  max_width?: number;
+  max_height?: number;
+  force_dimensions?: boolean;
+}
+
+export interface ImageResponse {
+  id: string;
+  url: string;
+  mime_type: string;
+  width: number;
+  height: number;
+  size: number;
+}
+
+export interface UploadImageResponse {
+  image: ImageResponse;
 }

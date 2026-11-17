@@ -11,25 +11,23 @@ import {
 import type { TimestampStatusCount } from "$lib/server/types/db";
 import { GetNowTimestampUTC, UptimeCalculator } from "$lib/server/tool";
 import GC from "$lib/global-constants.js";
-import { GetStatusColor, GetStatusSummary, ParseLatency } from "$lib/clientTools";
-import { GetMonitorsParsed } from "$lib/server/controllers/monitorsController";
-import type { GroupMonitorTypeData } from "$lib/server/types/monitor";
+import {
+  GetStatusColor,
+  GetStatusSummary,
+  ParseLatency,
+  ResolveGroupMemberDisplay,
+  ResolveSslExpiresAtMs,
+} from "$lib/clientTools";
+import { AttachSslCacheFields, GetMonitorsParsed } from "$lib/server/controllers/monitorsController";
+import type { GroupMemberDisplay, GroupMonitorTypeData } from "$lib/server/types/monitor";
 
 export const load: PageServerLoad = async ({ params, parent }) => {
   const { monitor_tag } = params;
   const parentData = await parent();
-  // Validate monitor exists
-  const monitors = await GetMonitorsParsed({ tag: monitor_tag, status: "ACTIVE", is_hidden: "NO" });
-  if (!monitors || monitors.length === 0) {
-    throw error(404, { message: "Monitor not found" });
-  }
+  const is_hidden = parentData.canSeeHiddenMonitors ? undefined : "NO";
+  const monitors = await GetMonitorsParsed({ tag: monitor_tag, status: "ACTIVE", is_hidden });
   const monitor = monitors[0];
   if (!monitor) {
-    throw error(404, { message: "Monitor not found" });
-  }
-
-  // Check if monitor is hidden
-  if (monitor.is_hidden === "YES") {
     throw error(404, { message: "Monitor not found" });
   }
 
@@ -55,6 +53,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 
   //last known status
   const lastStatus = await db.getLatestMonitoringData(monitor.tag);
+  const sslStatus = monitor.monitor_type === "SSL" ? await AttachSslCacheFields(lastStatus) : null;
   //use uptime calculator tool to parse
   let item: TimestampStatusCount = {
     ts: lastStatus ? lastStatus.timestamp : GetNowTimestampUTC(),
@@ -70,14 +69,16 @@ export const load: PageServerLoad = async ({ params, parent }) => {
   //get status summary
   let extendedTags: string[] = [];
   let monitorGroupMembersByTag: Record<string, string[]> = {};
+  let groupMemberDisplay: GroupMemberDisplay | undefined;
   if (monitor.monitor_type === "GROUP") {
     const groupData = monitor.type_data as GroupMonitorTypeData;
     const memberTags = groupData.monitors.map((m) => m.tag);
     extendedTags = extendedTags.concat(memberTags);
+    groupMemberDisplay = ResolveGroupMemberDisplay(groupData.memberDisplay);
   }
 
   if (extendedTags.length > 0) {
-    const parsedExtendedMonitors = await GetMonitorsParsed({ tags: extendedTags, status: "ACTIVE", is_hidden: "NO" });
+    const parsedExtendedMonitors = await GetMonitorsParsed({ tags: extendedTags, status: "ACTIVE", is_hidden });
     for (const parsedMonitor of parsedExtendedMonitors) {
       if (parsedMonitor.monitor_type !== "GROUP") continue;
 
@@ -107,12 +108,18 @@ export const load: PageServerLoad = async ({ params, parent }) => {
       textClass: GetStatusColor(item),
       monitorLastStatusTimestamp: item.ts,
       monitorLastLatency: ParseLatency(item.avgLatency),
+      monitorType: monitor.monitor_type,
+      monitorSslExpiresAt: ResolveSslExpiresAtMs(sslStatus),
+      monitorSslTrusted: sslStatus?.cert_trusted ?? null,
+      monitorIssuerCn: sslStatus?.issuer_cn ?? null,
+      monitorIssuerO: sslStatus?.issuer_o ?? null,
       ongoingIncidents,
       ongoingMaintenances,
       upcomingMaintenances,
       externalUrl: monitor.external_url,
       extendedTags,
       monitorGroupMembersByTag,
+      groupMemberDisplay,
       maxDays,
       monitorSharingOptions: {
         showShareBadgeMonitor: monitor.monitor_settings_json?.sharing_options?.showShareBadgeMonitor ?? true,

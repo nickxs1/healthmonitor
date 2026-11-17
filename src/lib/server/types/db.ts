@@ -14,6 +14,11 @@ export interface MonitoringData {
   type: string | null;
   error_message?: string | null;
   raw_status?: string | null;
+  /** SSL-only fields cached in Redis last_status (not DB columns). */
+  expiry_at?: string | null;
+  issuer_cn?: string | null;
+  issuer_o?: string | null;
+  cert_trusted?: boolean | null;
 }
 
 export interface MonitoringDataInsert {
@@ -556,6 +561,7 @@ export interface MaintenanceRecord {
   description: string | null;
   start_date_time: number; // Unix timestamp - when the first occurrence starts
   rrule: string; // iCalendar RRULE string (e.g., FREQ=WEEKLY;BYDAY=SU or FREQ=MINUTELY;COUNT=1)
+  timezone: string | null; // IANA time zone the rrule repeats in; null repeats in UTC
   duration_seconds: number; // Duration of each maintenance window in seconds
   status: "ACTIVE" | "INACTIVE";
   created_at: DbTimestamp;
@@ -568,6 +574,7 @@ export interface MaintenanceRecordInsert {
   description?: string | null;
   start_date_time: number;
   rrule: string;
+  timezone?: string | null;
   duration_seconds: number;
   status?: "ACTIVE" | "INACTIVE";
   is_global?: string;
